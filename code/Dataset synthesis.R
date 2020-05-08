@@ -35,3 +35,21 @@ total_hostlev_45 <- MID_slim %>%
 
 
 
+# ------- manipulate IGO data set -------
+
+GAH <- IGO %>%
+  group_by(ccode) %>%
+  summarize_at(
+    .vars = vars(AAAID:Wassen),
+    .funs = ~ . %in% c(1, 2)
+  )
+
+
+IGO_slim <- IGO %>%
+  group_by(ccode) %>%
+  summarize_at(
+    .vars = vars(.),
+    .funs = ~ . %in% c(1, 2)
+  )
+
+
