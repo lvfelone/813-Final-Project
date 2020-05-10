@@ -60,6 +60,27 @@ IGO_final <- tallied_by_IGO %>%
   )
 
 
+IGO_1_only <- IGO %>%
+  filter(year %in% c(1816:2010)) %>% 
+  group_by(ccode) %>%
+  summarize_at(
+    .vars = vars(AAAID:Wassen),
+    .funs = ~ sum(. == 1)
+  ) 
+
+
+IGO_1_final <- IGO_1_only %>% 
+  mutate(
+    total_member_years = rowSums(IGO_1_only,c(-1))
+  ) %>% 
+  select(
+    ccode,
+    total_member_years, 
+    AAAID:Wassen
+  )
+
+
+
 IGO %>% 
   count(ccode)
 
