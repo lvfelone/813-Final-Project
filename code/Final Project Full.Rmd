@@ -1,0 +1,174 @@
+---
+title: "813 Final Project"
+author: "Laura Felone"
+date: "5/7/2020"
+
+abstract: This project compares the relationship between International Governmental Organization (IGO) membership and engagement in interstate conflict. It uses data from the Correlates of War Project to assess if higher membership in IGOs (measured by the number of member years a state has total for the period 1814-2010) is correlated with the state being involved in fewer conflicts (measured as the number of times a state either used force or engaged in war during the same timespan). [FINDINGS]
+
+bibliography: Final project bib.bib 
+biblio-style: authoryear   
+
+output: pdf_document
+---
+# Introduction
+
+Liberalism, as one of the key paradigms of International Relations, relies on the concept that cooperation in the international arena is possible through the use of international institutions. This cooperation due to International Governmental Organizations (IGOs) will, in turn, decrease violent conflict between states. To test this theory, this project compares the relationship between IGO membership and interstate conflict during the years 1816-2010, hypothesizing that more IGO membership will be correlated with a state being involved in fewer violent conflicts. It uses data from the Correlates of War project to assess this relationship. Membership in IGOs is measured by the total number of member years across all 534 IGOs included in the 3rd version of the Intergovernmental Organizations data set [@Pevehouse:2020:IGO]. More specifically, the data are grouped by each state, which collapses the timespan into one grouping, then the number of associate memberships (2's) and full memberships (1's) were summed by state. For example, during the period 1816-2010, the United States had 66 member years (values of 1 or 2) in the United Nations. This contributed to its total of 5960 member years across all IGOs. Level of interstate conflict is measured by the number of times a state reached a hostility level in an interstate conflict in which it used force or engaged in all out war [@Palmer:Forthcoming:MID]. This data is pulled from version 4.3B of the Militarized Interstate Disputes data set. Lastly, a control variable for the power of a state is added to the regression. The measure of this is each state's mean Composite Index of National Capacity (CINC) over the 1816-2010 time period, drawn from version 5 of the National Material Capabilities data set [@Singer:1972:power-orig, @Singer:1987:power-update]. A state's CINC score for a given year is an aggregation of the six individual components (iron and steel production, military expenditures, military personnel, energy consumption, total population, and urban population) that measure material capabilities into a single value. This value is an average of that state's share of the system total of each of these components that year with each component being weighted equally. 
+
+
+# Model and Descriptive Statistics
+
+```{r, include = FALSE}
+
+library("here")
+library("tidyverse")
+library("broom")
+library("lmtest")    
+library("estimatr")  
+library("prediction")
+library("MASS")
+
+data <- read_csv(here("data", "FINAL.csv"))
+
+
+```
+
+Regressing the total number of conflicts on the total number of member years with a control variable for power provides initial results. This is depicted in the plot above and displays a tentative slight positive correlation between the number of years a state is a member of an IGO and the number of violent conflicts they engage in. 
+
+```{r, echo = FALSE, message = FALSE}
+
+model <- lm(total_conflicts ~ total_member_years + cinc, data = data)
+
+augment(model) %>% 
+  ggplot(aes(x = total_member_years, y = total_conflicts)) +
+  geom_point() + 
+  geom_smooth(method = lm) + 
+  labs(x = "Total IGO Member Years",
+       y = "Total Conflicts", 
+       title = "Linear Regression of Total Conflicts on \n Total IGO Member Years 1816-2010") +
+   theme(plot.title = element_text(hjust = 0.5))
+  
+```
+
+```{r}
+glance(model)
+tidy(model)
+
+```
+
+
+The r-squared for the model is high at 0.619, which indicates that the model fits the data well with about 62% of the variance being explained. The coefficient for the primary variable of interest, total number of member years, is 0.00316. This indicates that, for an increase one member year per state, there is an average of 0.00316 more conflicts per state. There is a wide range in the standard errors of the two variables: total member years has a rather low standard error of 0.000647, while the average CINC score has a standard error of 46.7.  
+
+
+These metrics, at first glance, indicate that the data fit the model relatively well. To confirm this, I plot the residuals of the model in the next section.
+
+# Residuals
+
+```{r, echo = FALSE}
+
+# plot residuals 
+
+augment(model) %>% 
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  labs(x = "Fitted Values Predicted by Model",
+       y = "Residuals", 
+       title = "Residual Plot") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+The plot above does not have a random spread to it, which would indicate that the model fits the data well. Instead, it has a cone shope, which is a sign of heteroskedasticity. To determine which variable is potentially causing the heteroskedasticity, I plotted the residuals for each variable alone. 
+
+```{r, echo = FALSE}
+
+# as_labeller coerces labeller function down below
+
+labels <- as_labeller(c(total_member_years = "Total IGO Member Years",
+                        cinc = "Average CINC Score"))
+
+augment(model) %>% 
+  pivot_longer(c(total_member_years, cinc), 
+               names_to = "variable", 
+               values_to = "x") %>% 
+  ggplot(aes(x = x, y = .resid)) + 
+  geom_point() + 
+  facet_wrap(~ variable, 
+             scales = "free",
+             labeller = labels
+             ) +
+  labs(x = "Values Predicted by Model",
+       y = "Residuals", 
+       title = "Residuals by Variable") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+Neither variable has particularly random residuals, although the Average CINC Score seems to be sort of random outside of the cluster around 0. The Total IGO Member Years variable, however, has that heteroskedastic cone shape in its residuals. Therefore, I ran a Breusch-Pagan-Godfrey test on this variable to further examine its heteroskedasticity. 
+
+```{r, echo = FALSE}
+bptest(
+  formula = model$terms,
+  data = model$model,
+  varformula = ~ total_member_years
+)
+```
+
+The Breusch-Pagan-Godfrey test essentially regresses standardized residuals on the independent variables. A small resulting p-value indicates a large $\chi^2$, and the homoskedasticity assumption is rejected for large values of $\chi^2$. When I ran the test on the IGO variable, it returned a p-value of 0.039, which is relatively small. Therefore, this appears to be the variable for which I can reject the null of homoskedasticity. 
+
+To deal with this heteroskedasticity, I ran a robust linear model and utilize Huber-White robust standard errors. The first plot displayed below show the results of this model. It is identical to the plot of the original regression, as it should be given that the coefficients of the two models should be the same. The standard errors, however, of these coefficients should change, with those of the robust model being altered to account for the hetereoskedasticity in the simple linear model. The standard errors of both models are displayed underneath the plot. 
+
+
+```{r, echo = FALSE, message = FALSE}
+robust_model <- lm_robust(total_conflicts ~ total_member_years + cinc, data = data)
+
+prediction::prediction(robust_model) %>% 
+  ggplot(aes(x = total_member_years, y = total_conflicts)) +
+  geom_point() + 
+  geom_smooth(method = lm) + 
+  labs(x = "Total IGO Member Years",
+       y = "Total Conflicts", 
+       title = "Robust Linear Regression of Total Conflicts on \n Total IGO Member Years 1816-2010") +
+   theme(plot.title = element_text(hjust = 0.5, size = 13))
+
+robust_df <- prediction::prediction(
+  robust_model, 
+  interval = "confidence"
+) %>%
+  as_tibble()
+
+
+
+```
+
+Original simple linear regression model:
+```{r}
+tidy(model)
+```
+
+Robust linear regression model:
+```{r}
+tidy(robust_model)
+```
+
+It appears that the robust model successfully altered the standard errors. They are much smaller with that model. 
+PLOT RESIDUALS TO DETERMINE IS HETEROSKEDASTICITY WAS TAKEN CARE OF
+
+```{r}
+RESIDUALS PLOT 
+```
+
+
+# Conclusion
+
+What'd we find yo?
+
+Things would change:
+-Not a great way to handle panel data, but wasn't 100% sure yet how to do a fixed or random effects model and really deal with time series. 
+-Should've added more controls, like GDP as another common one for power and regime type (thinking about democratic peace theory) but didn't yet know how to merge/access data that wasn't from the same source 
+
+
+
+
+# References
+
+
